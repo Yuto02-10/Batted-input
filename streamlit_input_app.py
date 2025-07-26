@@ -120,7 +120,7 @@ with col2:
                 st.download_button(
                     label="CSVデータをダウンロード",
                     data=csv_data,
-                    file_name=f"{selected_player}_{hit_type}_data.csv", # ファイル名を動的に生成
+                    file_name="hitting_data.csv", # ファイル名を動的に生成
                     mime="text/csv"
                 )
             else:
