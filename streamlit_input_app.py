@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-import os 
 from PIL import Image, ImageDraw
 import os
 import glob
 from streamlit_image_coordinates import streamlit_image_coordinates
 import csv
-import io
+import io # ### 追加 ### メモリ上でCSVデータを扱うためにインポート
 
 # --- 定数と定義 ---
 BASEBALL_FIELD_IMG = 'baseballfield.jpg'
@@ -22,6 +21,7 @@ PITCH_TYPE_SHAPES = {
 
 # --- ヘルパー関数 ---
 def draw_shape(draw_obj, shape, x, y, size, color):
+    # (この関数は変更なし)
     h_size = size / 2
     if shape == 'ellipse':
         draw_obj.ellipse((x - h_size, y - h_size, x + h_size, y + h_size), fill=color, outline=color)
@@ -36,62 +36,58 @@ def draw_shape(draw_obj, shape, x, y, size, color):
     else:
         draw_obj.ellipse((x - h_size, y - h_size, x + h_size, y + h_size), fill=color, outline=color)
 
-def save_data(team_roster_file, player, balls, strikes, pitch_type, hit_type, x, y):
-    """### 変更 ###: チームの名簿ファイル名からデータファイル名を生成して保存"""
-    # 例: "Aチーム.csv" -> "Aチーム_data.csv"
-    output_filename = team_roster_file.replace('.csv', '_data.csv')
-    
-    file_exists = os.path.isfile(output_filename)
-    # ### 変更 ###: team_name列は不要になったため削除
-    header = ['player_name', 'balls', 'strikes', 'pitch_type', 'hit_type', 'x_coord', 'y_coord']
-    data_row = [player, balls, strikes, pitch_type, hit_type, x, y]
-    
-    with open(output_filename, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        if not file_exists:
-            writer.writerow(header)
-        writer.writerow(data_row)
-    print(f"{output_filename} にデータを保存しました: {data_row}")
+# ### 削除 ### save_data関数は不要になるため削除します
 
 # --- Streamlit アプリケーション ---
 st.set_page_config(layout="wide")
 st.title("⚾ 打球分析アプリ - データ入力")
 
-base_img = Image.open(BASEBALL_FIELD_IMG).resize(IMAGE_SIZE)
+# ベースとなる画像を読み込み
+try:
+    base_img = Image.open(BASEBALL_FIELD_IMG).resize(IMAGE_SIZE)
+except FileNotFoundError:
+    st.error(f"{BASEBALL_FIELD_IMG}が見つかりません。アプリと同じフォルダに配置してください。")
+    st.stop() # 画像がなければアプリを停止
 
+# 2カラムレイアウト
 col1, col2 = st.columns([1, 2])
 
+# col1: 操作パネル
 with col1:
     st.header("操作パネル")
     
-    # hitting_data.csv や *_data.csv を除外した、名簿ファイルのみを検索
+    # team_roster_data.csvを除いた名簿ファイルのみを検索
     all_csv_files = glob.glob('*.csv')
     team_files = sorted([f for f in all_csv_files if not f.endswith('_data.csv')])
     
     selected_team_file = st.selectbox("チームを選択", team_files)
 
+    selected_player = None
     if selected_team_file:
         try:
             roster_df = pd.read_csv(selected_team_file, encoding='cp932', header=None)
-            player_list = roster_df.iloc[:, 0].tolist()
+            player_list = roster_df.iloc[:, 0].tolist() # 1列目を選手名として取得
             selected_player = st.selectbox("選手を選択", player_list)
         except Exception as e:
             st.error(f"{selected_team_file}の読み込みに失敗しました: {e}")
-            selected_player = None
     
     balls = st.selectbox("ボール", [0, 1, 2, 3])
     strikes = st.selectbox("ストライク", [0, 1, 2])
     pitch_type = st.selectbox("球種", ['ストレート', 'カーブ', 'スライダー', 'フォーク', 'チェンジアップ', 'その他'])
     hit_type = st.selectbox("打球性質/結果", ['ゴロ', 'フライ', 'ライナー', '三振', '四死球'])
     
-    save_button = st.button("この内容でデータを保存")
+    # ### 変更 ### 保存ボタンは、後で表示されるダウンロードボタンの準備をする役割に変更
+    prepare_button = st.button("データダウンロードの準備")
 
+# col2: 画像表示とインタラクション
 with col2:
     st.header("打球位置")
     st.write("打球位置をクリックしてください")
     
+    # 画像クリックで座標を取得
     value = streamlit_image_coordinates(base_img, key="input_image")
 
+    # クリックされたら、その点を描画したプレビューを表示
     if value:
         coords = value["x"], value["y"]
         st.write(f"クリック座標: {coords}")
@@ -104,10 +100,31 @@ with col2:
         
         st.image(img_with_plot)
         
-        if save_button:
+        # 準備ボタンが押されたら、ダウンロードボタンを表示
+        if prepare_button:
             if selected_team_file and selected_player:
-                save_data(selected_team_file, selected_player, balls, strikes, pitch_type, hit_type, coords[0], coords[1])
-                st.success(f"データを保存しました: {selected_player}, {hit_type} at ({coords[0]}, {coords[1]})")
-                st.balloons()
+                # データをCSV形式の文字列に変換
+                header = ['team_name', 'player_name', 'balls', 'strikes', 'pitch_type', 'hit_type', 'x_coord', 'y_coord']
+                # team_name列には、どの名簿ファイルから入力したかを記録
+                data_row = [selected_team_file, selected_player, balls, strikes, pitch_type, hit_type, coords[0], coords[1]]
+                
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow(header)
+                writer.writerow(data_row)
+                csv_data = output.getvalue()
+
+                st.success(f"データが準備できました！")
+                
+                # ダウンロードボタンを設置
+                st.download_button(
+                    label="CSVデータをダウンロード",
+                    data=csv_data,
+                    file_name=f"{selected_player}_{hit_type}_data.csv", # ファイル名を動的に生成
+                    mime="text/csv"
+                )
             else:
                 st.warning("チームと選手を選択してください。")
+    else:
+        # 何もクリックされていないときは元の画像を表示
+        st.image(base_img)
