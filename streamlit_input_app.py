@@ -72,7 +72,7 @@ with col1:
     if selected_team_file:
         try:
             roster_df = pd.read_csv(selected_team_file, encoding='cp932', header=None)
-            player_list = roster_df.iloc[:, 1].tolist()
+            player_list = roster_df.iloc[:, 0].tolist()
             selected_player = st.selectbox("選手を選択", player_list)
         except Exception as e:
             st.error(f"{selected_team_file}の読み込みに失敗しました: {e}")
